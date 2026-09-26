@@ -175,6 +175,7 @@
     <script>
       (() => {
         const API_PREFIX = '/v0/management';
+        const PLUGIN_API_PREFIX = `${API_PREFIX}/plugins/cpa-request-tracker`;
         const KEY_SESSION = 'cpa-request-tracker.management-key';
         const SALT = 'cli-proxy-api-webui::secure-storage';
         const pageMarker = '/v0/resource/plugins/';
@@ -235,6 +236,12 @@
           return response;
         };
 
+        const readJSON = async (response) => {
+          const body = await response.text();
+          if (!body.trim()) throw new Error(`CPA 返回 HTTP ${response.status}，响应为空。`);
+          try { return JSON.parse(body); } catch { throw new Error(`CPA 返回了无法解析的 JSON（HTTP ${response.status}）。`); }
+        };
+
         const makeQuery = () => {
           const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
           Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
@@ -288,13 +295,13 @@
           rows.innerHTML = '<tr><td class="loading" colspan="7">正在读取调用记录…</td></tr>';
           document.getElementById('empty').classList.remove('show');
           try {
-            const response = await request(`${apiRoot}${API_PREFIX}/cpa-request-tracker/records?${makeQuery()}`);
+            const response = await request(`${apiRoot}${PLUGIN_API_PREFIX}/records?${makeQuery()}`);
             if (response.status === 401 || response.status === 403) {
               managementKey = '';
               sessionStorage.removeItem(KEY_SESSION);
               throw new Error('Management key 无效或当前账号没有管理权限，请检查密钥。');
             }
-            const data = await response.json();
+            const data = await readJSON(response);
             if (!response.ok) throw new Error(data.error || `CPA 返回 HTTP ${response.status}`);
             setNotice('', false);
             render(data);

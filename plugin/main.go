@@ -74,7 +74,7 @@ const (
 	resourcePath = "/page"
 )
 
-var pluginVersion = "0.1.0"
+var pluginVersion = "0.1.1"
 
 //go:embed web/index.html
 var indexHTML string
@@ -217,7 +217,7 @@ func handleMethod(method string, raw []byte) ([]byte, error) {
 				Description: "按账号和模型查看调用元数据，并下载 CPA 请求日志。",
 			}},
 			Routes: []managementRoute{
-				{Method: http.MethodGet, Path: "/records", Description: "分页查询请求记录"},
+				{Method: http.MethodGet, Path: "/plugins/" + pluginID + "/records", Description: "分页查询请求记录"},
 			},
 		})
 	case pluginabi.MethodManagementHandle:

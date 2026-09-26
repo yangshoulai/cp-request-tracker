@@ -11,7 +11,7 @@ CPA 请求完成
 CPA 插件菜单
     └─ /v0/resource/plugins/cpa-request-tracker/page
          └─ 浏览器呈现单页
-              └─ CPA Management API：分页记录和账号信息
+              └─ /v0/management/plugins/cpa-request-tracker/records：分页记录和账号信息
                    └─ 按 TraceID 调用 CPA 请求日志下载接口
 ```
 
