@@ -25,7 +25,7 @@ plugins:
     - https://raw.githubusercontent.com/yangshoulai/cp-request-tracker/main/registry.json
 ```
 
-在 CPA 管理面板的插件管理器中刷新自定义来源并安装 `CPA Request Tracker`。推送到 `main` 会自动构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本，并在 Actions 运行记录中保留 ZIP 产物 7 天。推送 `v*` 标签还会创建包含 CPA 可识别 ZIP 和 `checksums.txt` 的 GitHub Release，供插件商店下载。Linux 插件在 manylinux2014 环境中构建，以兼容 glibc 2.17 基线。
+在 CPA 管理面板的插件管理器中刷新自定义来源并安装 `CPA Request Tracker`。推送 `v*` 标签会自动构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本，并创建包含 CPA 可识别 ZIP 和 `checksums.txt` 的 GitHub Release，供插件商店下载。Linux 插件在 manylinux2014 环境中构建，以兼容 glibc 2.17 基线。
 
 若要出现在 CPA 官方默认插件商店，需另行向官方插件商店提交 registry PR；单独发布本仓库不会自动修改官方商店索引。
 
@@ -74,7 +74,7 @@ cd plugin
 go build -buildmode=c-shared -o cpa-request-tracker.so .
 ```
 
-标准插件的动态库必须按目标 CPA 平台编译。推送到 `main` 或手动运行工作流会构建 Actions 产物；向 GitHub 推送 `v*` 标签会额外创建可供插件商店安装的 GitHub Release。
+标准插件的动态库必须按目标 CPA 平台编译。向 GitHub 推送 `v*` 标签即可触发多平台构建与 GitHub Release 打包。
 
 ## 兼容性
 
