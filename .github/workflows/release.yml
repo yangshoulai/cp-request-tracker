@@ -81,7 +81,7 @@ jobs:
               version="${RELEASE_VERSION#v}"
               mkdir -p dist
               CGO_ENABLED=1 GOOS=linux GOARCH="${GOARCH}" go build \
-                -trimpath -buildmode=c-shared \
+                -buildvcs=false -trimpath -buildmode=c-shared \
                 -ldflags="-s -w -X main.pluginVersion=${version}" \
                 -o "dist/${PLUGIN_FILE}" .
             '
