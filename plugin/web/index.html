@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>CPA 调用记录</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #202a31;
+        --muted: #64747d;
+        --line: #dce4e5;
+        --canvas: #f4f7f6;
+        --surface: #ffffff;
+        --teal: #116b69;
+        --teal-soft: #e7f3f1;
+        --amber: #9a5a0b;
+        --red: #a43c38;
+        --shadow: 0 1px 2px rgb(24 45 52 / 5%);
+        font-family: Inter, "Avenir Next", "Segoe UI", "PingFang SC", sans-serif;
+        color: var(--ink);
+        background: var(--canvas);
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-width: 320px; background: var(--canvas); }
+      button, input { font: inherit; }
+      button { color: inherit; }
+      .shell { max-width: 1540px; margin: 0 auto; padding: 24px clamp(16px, 3vw, 42px) 32px; }
+      .topline { display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line); padding: 0 0 18px; }
+      .brand { display: flex; align-items: center; gap: 13px; min-width: 0; }
+      .brand-mark { display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid #c5d6d5; border-radius: 8px; background: var(--teal-soft); color: var(--teal); }
+      .brand-mark svg { width: 20px; height: 20px; }
+      .brand h1 { margin: 0; font-size: 19px; letter-spacing: -.025em; font-weight: 690; }
+      .brand p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+      .top-actions { display: flex; align-items: center; gap: 12px; }
+      .retention { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+      .retention svg { width: 15px; height: 15px; color: var(--teal); }
+      .key-toggle, .primary, .quiet, .download, .page-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); border-radius: 6px; background: white; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+      .key-toggle { padding: 8px 11px; color: #465861; font-size: 12px; white-space: nowrap; }
+      .key-toggle:hover, .quiet:hover, .page-button:hover { border-color: #aababc; background: #f8faf9; }
+      button:focus-visible, input:focus-visible { outline: 3px solid rgb(17 107 105 / 26%); outline-offset: 2px; }
+      button:disabled { cursor: not-allowed; opacity: .44; }
+      .key-panel { display: none; margin: 18px 0 0; padding: 16px; border: 1px solid #c9dedb; border-radius: 7px; background: #f8fcfb; box-shadow: var(--shadow); }
+      .key-panel.open { display: block; }
+      .key-row { display: flex; gap: 9px; max-width: 750px; }
+      .key-row input, .filters input { min-width: 0; width: 100%; height: 36px; padding: 0 10px; border: 1px solid #cdd8d8; border-radius: 5px; background: white; color: var(--ink); }
+      .key-row input { flex: 1; }
+      .primary { min-height: 36px; padding: 0 13px; border-color: var(--teal); background: var(--teal); color: white; font-size: 12px; font-weight: 650; }
+      .primary:hover { background: #0d5d5b; }
+      .key-help { margin: 9px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+      .notice { display: none; margin: 14px 0 0; padding: 10px 12px; border: 1px solid #edcebd; border-radius: 5px; background: #fff8f2; color: #84421d; font-size: 12px; }
+      .notice.show { display: block; }
+      .toolbar { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin: 22px 0 12px; }
+      .section-title { margin: 0; font-size: 16px; letter-spacing: -.01em; font-weight: 680; }
+      .section-subtitle { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+      .filters { display: grid; grid-template-columns: repeat(5, minmax(115px, 1fr)) auto; gap: 8px; width: min(980px, 100%); }
+      .filters input { height: 34px; font-size: 12px; }
+      .filters input::placeholder { color: #849197; }
+      .quiet { min-height: 34px; padding: 0 11px; color: #44555d; font-size: 12px; white-space: nowrap; }
+      .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); box-shadow: var(--shadow); }
+      table { width: 100%; min-width: 1050px; border-collapse: separate; border-spacing: 0; text-align: left; }
+      thead th { position: sticky; top: 0; z-index: 1; padding: 11px 12px; border-bottom: 1px solid var(--line); background: #f6f9f8; color: #66777d; font-size: 11px; font-weight: 650; white-space: nowrap; }
+      tbody td { padding: 12px; border-bottom: 1px solid #edf0f0; font-size: 12px; vertical-align: middle; }
+      tbody tr:last-child td { border-bottom: 0; }
+      tbody tr:hover { background: #fbfdfc; }
+      .date { min-width: 148px; color: #42545d; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .account { min-width: 190px; }
+      .account-type { display: inline-flex; align-items: center; min-height: 21px; padding: 2px 7px; border: 1px solid #ccdcda; border-radius: 4px; background: #f1f8f7; color: #155f5d; font-size: 11px; font-weight: 650; }
+      .email { display: block; max-width: 205px; margin-top: 5px; color: #66777d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .model { max-width: 275px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 610; }
+      .reasoning { color: #53646c; white-space: nowrap; }
+      .latency { color: #43545d; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .result { display: inline-flex; align-items: center; gap: 6px; color: #256b4d; white-space: nowrap; }
+      .result::before { width: 6px; height: 6px; border-radius: 50%; background: #44a477; content: ""; }
+      .result.failed { color: var(--red); }
+      .result.failed::before { background: #c65048; }
+      .download { min-height: 29px; padding: 0 8px; color: #315960; font-size: 11px; white-space: nowrap; }
+      .download:hover { border-color: #a5c4c1; background: var(--teal-soft); }
+      .download svg { width: 14px; height: 14px; }
+      .empty { display: none; padding: 42px 20px; color: var(--muted); text-align: center; font-size: 13px; }
+      .empty.show { display: block; }
+      .bottom { display: flex; justify-content: space-between; align-items: center; gap: 14px; min-height: 52px; color: var(--muted); font-size: 12px; }
+      .pager { display: flex; align-items: center; gap: 8px; }
+      .page-button { width: 30px; height: 30px; }
+      .page-button svg { width: 14px; height: 14px; }
+      .page-count { min-width: 65px; text-align: center; color: #485960; font-variant-numeric: tabular-nums; }
+      .loading { color: var(--muted); text-align: center; }
+      .hide { display: none !important; }
+      @media (max-width: 940px) {
+        .toolbar { align-items: stretch; flex-direction: column; }
+        .filters { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
+      }
+      @media (max-width: 620px) {
+        .shell { padding: 16px 12px 22px; }
+        .topline { align-items: flex-start; }
+        .brand h1 { font-size: 16px; }
+        .brand p { max-width: 190px; line-height: 1.4; }
+        .top-actions { align-items: flex-end; flex-direction: column-reverse; gap: 8px; }
+        .retention { font-size: 11px; }
+        .key-toggle { padding: 7px 8px; }
+        .key-row { flex-direction: column; }
+        .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .filters input:last-of-type { grid-column: span 2; }
+        .bottom { align-items: flex-start; flex-direction: column; padding: 10px 0; }
+        .pager { align-self: flex-end; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topline">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h5M8 16h3"/><path d="m15 15 2 2 4-5"/></svg>
+          </span>
+          <div><h1>CPA 调用记录</h1><p>按时间追踪账号、模型和请求日志</p></div>
+        </div>
+        <div class="top-actions">
+          <span class="retention" id="retention" aria-live="polite">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>
+            保留 7 天
+          </span>
+          <button class="key-toggle" id="key-toggle" type="button" aria-expanded="false">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            管理密钥
+          </button>
+        </div>
+      </header>
+
+      <section class="key-panel" id="key-panel" aria-label="管理密钥设置">
+        <form id="key-form">
+          <div class="key-row">
+            <input id="management-key" type="password" autocomplete="off" placeholder="输入 CPA Management key" aria-label="CPA Management key" />
+            <button class="primary" type="submit">连接</button>
+          </div>
+          <p class="key-help">页面会尝试从当前面板的 <code>cli-proxy-auth</code> 中读取密钥（官方面板 v1、CPA-Manager-Plus v2）。密钥只保存在当前标签页会话中。若面板和 CPA API 不同源，请在此手动输入。</p>
+        </form>
+      </section>
+      <div class="notice" id="notice" role="status" aria-live="polite"></div>
+
+      <section class="toolbar" aria-label="调用记录和筛选">
+        <div><h2 class="section-title">最近调用</h2><p class="section-subtitle" id="record-total">正在连接 CPA…</p></div>
+        <form class="filters" id="filter-form">
+          <input name="account_type" placeholder="账号类型" aria-label="按账号类型筛选" />
+          <input name="email" placeholder="账号邮箱" aria-label="按邮箱筛选" />
+          <input name="model" placeholder="模型" aria-label="按模型筛选" />
+          <input name="reasoning_effort" placeholder="思考程度" aria-label="按思考程度筛选" />
+          <input name="q" placeholder="请求 ID / Trace ID" aria-label="搜索请求 ID 或 Trace ID" />
+          <button class="quiet" type="submit">筛选</button>
+        </form>
+      </section>
+
+      <div class="table-wrap">
+        <table aria-label="CPA API 调用记录">
+          <thead><tr><th scope="col">请求时间</th><th scope="col">账号</th><th scope="col">模型</th><th scope="col">思考程度</th><th scope="col">耗时</th><th scope="col">结果</th><th scope="col">CPA 日志</th></tr></thead>
+          <tbody id="rows"><tr><td class="loading" colspan="7">正在读取调用记录…</td></tr></tbody>
+        </table>
+        <div class="empty" id="empty">没有符合条件的调用记录。</div>
+      </div>
+      <footer class="bottom">
+        <span id="page-summary">—</span>
+        <nav class="pager" aria-label="分页">
+          <button class="page-button" id="previous" type="button" aria-label="上一页"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
+          <span class="page-count" id="page-count">1 / 1</span>
+          <button class="page-button" id="next" type="button" aria-label="下一页"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></button>
+        </nav>
+      </footer>
+    </main>
+    <script>
+      (() => {
+        const API_PREFIX = '/v0/management';
+        const KEY_SESSION = 'cpa-request-tracker.management-key';
+        const SALT = 'cli-proxy-api-webui::secure-storage';
+        const pageMarker = '/v0/resource/plugins/';
+        const markerIndex = location.pathname.indexOf(pageMarker);
+        const pathPrefix = markerIndex >= 0 ? location.pathname.slice(0, markerIndex) : '';
+        const apiRoot = location.origin + pathPrefix;
+        const form = document.getElementById('filter-form');
+        const rows = document.getElementById('rows');
+        const notice = document.getElementById('notice');
+        const keyPanel = document.getElementById('key-panel');
+        const keyInput = document.getElementById('management-key');
+        let page = 1;
+        let total = 0;
+        let pageSize = 25;
+        let filters = {};
+        let managementKey = '';
+
+        const decodeStored = (raw) => {
+          if (!raw) return null;
+          for (const [prefix, version] of [['enc::v2::', 'v2'], ['enc::v1::', 'v1']]) {
+            if (!raw.startsWith(prefix)) continue;
+            try {
+              const bytes = Uint8Array.from(atob(raw.slice(prefix.length)), (character) => character.charCodeAt(0));
+              const keyText = version === 'v2'
+                ? `${SALT}|v2|${location.host}`
+                : `${SALT}|${location.host}|${navigator.userAgent}`;
+              const key = new TextEncoder().encode(keyText);
+              for (let i = 0; i < bytes.length; i += 1) bytes[i] ^= key[i % key.length];
+              raw = new TextDecoder().decode(bytes);
+            } catch { return null; }
+            break;
+          }
+          try { return JSON.parse(raw); } catch { return raw; }
+        };
+
+        const discoverKey = () => {
+          try {
+            const stored = decodeStored(localStorage.getItem('cli-proxy-auth'));
+            const state = stored && typeof stored === 'object' ? (stored.state || stored) : null;
+            const key = state && typeof state.managementKey === 'string' ? state.managementKey.trim() : '';
+            if (key) return key;
+            const legacy = decodeStored(localStorage.getItem('managementKey'));
+            return typeof legacy === 'string' ? legacy.trim() : '';
+          } catch { return ''; }
+        };
+
+        const setNotice = (message, visible = true) => {
+          notice.textContent = message;
+          notice.classList.toggle('show', visible);
+        };
+        const escapeHTML = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+        const request = async (url, options = {}) => {
+          const response = await fetch(url, {
+            ...options,
+            cache: 'no-store',
+            headers: { ...(options.headers || {}), Authorization: `Bearer ${managementKey}` },
+          });
+          return response;
+        };
+
+        const makeQuery = () => {
+          const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+          Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
+          return params.toString();
+        };
+
+        const render = (data) => {
+          const items = Array.isArray(data.items) ? data.items : [];
+          total = Number(data.total) || 0;
+          pageSize = Number(data.page_size) || pageSize;
+          const pages = Math.max(1, Math.ceil(total / pageSize));
+          document.getElementById('record-total').textContent = `${total.toLocaleString()} 条调用记录`;
+          document.getElementById('retention').lastChild.textContent = `保留 ${Number(data.retention_days) || 7} 天`;
+          document.getElementById('page-count').textContent = `${page} / ${pages}`;
+          const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+          const end = Math.min(page * pageSize, total);
+          document.getElementById('page-summary').textContent = total ? `显示 ${start}–${end} 条，共 ${total} 条` : '共 0 条';
+          document.getElementById('previous').disabled = page <= 1;
+          document.getElementById('next').disabled = page >= pages;
+          document.getElementById('empty').classList.toggle('show', items.length === 0);
+          rows.innerHTML = items.map((item) => {
+            const date = new Date(item.requested_at);
+            const time = Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' }).format(date);
+            const latency = Number(item.latency_ms) >= 1000 ? `${(Number(item.latency_ms) / 1000).toFixed(2)} 秒` : `${Math.max(0, Number(item.latency_ms) || 0)} 毫秒`;
+            const type = escapeHTML(item.account_type || '未知');
+            const email = escapeHTML(item.account_email || '邮箱暂不可用');
+            const model = escapeHTML(item.model || '未知模型');
+            const effort = escapeHTML(item.reasoning_effort || '—');
+            const failed = Boolean(item.failed);
+            const canDownload = Boolean(item.trace_id);
+            return `<tr>
+              <td class="date">${escapeHTML(time)}</td>
+              <td class="account"><span class="account-type">${type}</span><span class="email" title="${email}">${email}</span></td>
+              <td class="model" title="${model}">${model}</td>
+              <td class="reasoning">${effort}</td>
+              <td class="latency">${escapeHTML(latency)}</td>
+              <td><span class="result ${failed ? 'failed' : ''}">${failed ? `失败${item.status_code ? ` · ${escapeHTML(item.status_code)}` : ''}` : '成功'}</span></td>
+              <td><button class="download" type="button" data-trace="${escapeHTML(item.trace_id || '')}" ${canDownload ? '' : 'disabled'} title="${canDownload ? '下载与此调用关联的 CPA 请求日志' : 'CPA 未提供可用的 Trace ID'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 17v3h14v-3"/></svg>下载日志</button></td>
+            </tr>`;
+          }).join('');
+        };
+
+        const load = async () => {
+          if (!managementKey) {
+            rows.innerHTML = '<tr><td class="loading" colspan="7">请输入 Management key 后查看记录。</td></tr>';
+            document.getElementById('record-total').textContent = '尚未连接 CPA';
+            keyPanel.classList.add('open');
+            document.getElementById('key-toggle').setAttribute('aria-expanded', 'true');
+            return;
+          }
+          rows.innerHTML = '<tr><td class="loading" colspan="7">正在读取调用记录…</td></tr>';
+          document.getElementById('empty').classList.remove('show');
+          try {
+            const response = await request(`${apiRoot}${API_PREFIX}/cpa-request-tracker/records?${makeQuery()}`);
+            if (response.status === 401 || response.status === 403) {
+              managementKey = '';
+              sessionStorage.removeItem(KEY_SESSION);
+              throw new Error('Management key 无效或当前账号没有管理权限，请检查密钥。');
+            }
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || `CPA 返回 HTTP ${response.status}`);
+            setNotice('', false);
+            render(data);
+          } catch (error) {
+            rows.innerHTML = '<tr><td class="loading" colspan="7">无法加载调用记录。</td></tr>';
+            setNotice(error instanceof Error ? error.message : '连接 CPA 失败，请检查服务地址和 Management key。');
+            keyPanel.classList.add('open');
+            document.getElementById('key-toggle').setAttribute('aria-expanded', 'true');
+          }
+        };
+
+        document.getElementById('key-toggle').addEventListener('click', () => {
+          const open = !keyPanel.classList.contains('open');
+          keyPanel.classList.toggle('open', open);
+          document.getElementById('key-toggle').setAttribute('aria-expanded', String(open));
+          if (open) keyInput.focus();
+        });
+        document.getElementById('key-form').addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const value = keyInput.value.trim();
+          if (!value) { setNotice('请输入 CPA Management key。'); keyInput.focus(); return; }
+          managementKey = value;
+          sessionStorage.setItem(KEY_SESSION, value);
+          page = 1;
+          await load();
+          if (!notice.classList.contains('show')) {
+            keyPanel.classList.remove('open');
+            document.getElementById('key-toggle').setAttribute('aria-expanded', 'false');
+          }
+        });
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          filters = Object.fromEntries(Array.from(new FormData(form).entries(), ([key, value]) => [key, String(value).trim()]));
+          page = 1;
+          await load();
+        });
+        document.getElementById('previous').addEventListener('click', async () => { if (page > 1) { page -= 1; await load(); } });
+        document.getElementById('next').addEventListener('click', async () => { if (page * pageSize < total) { page += 1; await load(); } });
+        rows.addEventListener('click', async (event) => {
+          const button = event.target.closest('button[data-trace]');
+          if (!button || button.disabled) return;
+          const traceID = button.dataset.trace;
+          button.disabled = true;
+          const oldContent = button.innerHTML;
+          button.textContent = '下载中…';
+          try {
+            const response = await request(`${apiRoot}${API_PREFIX}/request-log-by-id/${encodeURIComponent(traceID)}`);
+            if (!response.ok) {
+              let reason = `CPA 返回 HTTP ${response.status}`;
+              try { const body = await response.json(); reason = body.error || body.message || reason; } catch {}
+              throw new Error(reason);
+            }
+            const blob = await response.blob();
+            const disposition = response.headers.get('content-disposition') || '';
+            const filename = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1]
+              ? decodeURIComponent(/filename\*=UTF-8''([^;]+)/i.exec(disposition)[1])
+              : (/filename="?([^";]+)"?/i.exec(disposition)?.[1] || `cpa-request-${traceID}.log`);
+            const anchor = document.createElement('a');
+            const objectURL = URL.createObjectURL(blob);
+            anchor.href = objectURL;
+            anchor.download = filename;
+            anchor.click();
+            window.setTimeout(() => URL.revokeObjectURL(objectURL), 1000);
+            setNotice('', false);
+          } catch (error) {
+            setNotice(`日志下载失败：${error instanceof Error ? error.message : '未知错误'}`);
+          } finally {
+            button.disabled = false;
+            button.innerHTML = oldContent;
+          }
+        });
+
+        try { managementKey = sessionStorage.getItem(KEY_SESSION) || discoverKey(); } catch { managementKey = discoverKey(); }
+        if (managementKey) keyInput.value = managementKey;
+        load();
+      })();
+    </script>
+  </body>
+</html>

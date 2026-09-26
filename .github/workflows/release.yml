@@ -1,0 +1,138 @@
+name: Build CPA plugin release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            extension: so
+            manylinux_image: quay.io/pypa/manylinux2014_x86_64
+          - runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            extension: so
+            manylinux_image: quay.io/pypa/manylinux2014_aarch64
+          - runner: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            extension: dylib
+          - runner: macos-15
+            goos: darwin
+            goarch: arm64
+            extension: dylib
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+            extension: dll
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        id: setup-go
+        with:
+          go-version-file: plugin/go.mod
+          cache-dependency-path: plugin/go.sum
+      - name: Download Linux Go modules
+        if: matrix.goos == 'linux'
+        working-directory: plugin
+        run: go mod download
+      - name: Build Linux plugin with the CPA glibc baseline
+        if: matrix.goos == 'linux'
+        shell: bash
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          PLUGIN_FILE: cpa-request-tracker.${{ matrix.extension }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+          GO_VERSION: ${{ steps.setup-go.outputs.go-version }}
+          MANYLINUX_IMAGE: ${{ matrix.manylinux_image }}
+        run: |
+          docker run --rm \
+            -v "$PWD:/src" \
+            -v "$HOME/go/pkg/mod:/go/pkg/mod" \
+            -w /src/plugin \
+            -e GOARCH \
+            -e PLUGIN_FILE \
+            -e RELEASE_VERSION \
+            -e GO_VERSION \
+            -e GOMODCACHE=/go/pkg/mod \
+            "$MANYLINUX_IMAGE" \
+            bash -euo pipefail -c '
+              go_archive="go${GO_VERSION}.linux-${GOARCH}.tar.gz"
+              curl -fsSL "https://go.dev/dl/${go_archive}" -o "/tmp/${go_archive}"
+              rm -rf /usr/local/go
+              tar -C /usr/local -xzf "/tmp/${go_archive}"
+              export PATH="/usr/local/go/bin:${PATH}"
+              version="${RELEASE_VERSION#v}"
+              mkdir -p dist
+              CGO_ENABLED=1 GOOS=linux GOARCH="${GOARCH}" go build \
+                -trimpath -buildmode=c-shared \
+                -ldflags="-s -w -X main.pluginVersion=${version}" \
+                -o "dist/${PLUGIN_FILE}" .
+            '
+      - name: Build non-Linux plugin
+        if: matrix.goos != 'linux'
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+          PLUGIN_FILE: cpa-request-tracker.${{ matrix.extension }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_VERSION#v}"
+          mkdir -p plugin/dist
+          cd plugin
+          go build -trimpath -buildmode=c-shared -ldflags="-s -w -X main.pluginVersion=${version}" -o "dist/${PLUGIN_FILE}" .
+      - name: Package CPA artifact (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          PLUGIN_FILE: cpa-request-tracker.${{ matrix.extension }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          asset="cpa-request-tracker_${version}_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
+          (cd plugin/dist && zip -q "../../${asset}" "${PLUGIN_FILE}")
+      - name: Package CPA artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PLUGIN_FILE: cpa-request-tracker.${{ matrix.extension }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          $version = $env:RELEASE_VERSION.TrimStart('v')
+          $asset = "cpa-request-tracker_${version}_windows_amd64.zip"
+          Compress-Archive -Path "plugin/dist/$env:PLUGIN_FILE" -DestinationPath $asset
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.goos }}-${{ matrix.goarch }}
+          path: cpa-request-tracker_*.zip
+          if-no-files-found: error
+          retention-days: 2
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create checksums
+        run: cd dist && sha256sum cpa-request-tracker_*.zip > checksums.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

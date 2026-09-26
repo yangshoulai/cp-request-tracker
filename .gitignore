@@ -1,0 +1,16 @@
+# Go build output
+plugin/*.so
+plugin/*.dylib
+plugin/*.dll
+plugin/*.h
+plugin/bin/
+plugin/dist/
+
+# Local SQLite data
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Go tooling
+**/vendor/
+.DS_Store
