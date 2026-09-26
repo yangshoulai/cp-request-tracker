@@ -38,10 +38,10 @@
       .top-actions { display: flex; align-items: center; gap: 12px; }
       .retention { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; white-space: nowrap; }
       .retention svg { width: 15px; height: 15px; color: var(--teal); }
-      .key-toggle, .primary, .quiet, .download, .page-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); border-radius: 6px; background: white; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+      .key-toggle, .primary, .quiet, .download, .view-headers, .page-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); border-radius: 6px; background: white; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
       .key-toggle { padding: 8px 11px; color: #465861; font-size: 12px; white-space: nowrap; }
       .key-toggle:hover, .quiet:hover, .page-button:hover { border-color: #aababc; background: #f8faf9; }
-      button:focus-visible, input:focus-visible { outline: 3px solid rgb(17 107 105 / 26%); outline-offset: 2px; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid rgb(17 107 105 / 26%); outline-offset: 2px; }
       button:disabled { cursor: not-allowed; opacity: .44; }
       .key-panel { display: none; margin: 18px 0 0; padding: 16px; border: 1px solid #c9dedb; border-radius: 7px; background: #f8fcfb; box-shadow: var(--shadow); }
       .key-panel.open { display: block; }
@@ -78,9 +78,24 @@
       .result::before { width: 6px; height: 6px; border-radius: 50%; background: #44a477; content: ""; }
       .result.failed { color: var(--red); }
       .result.failed::before { background: #c65048; }
-      .download { min-height: 29px; padding: 0 8px; color: #315960; font-size: 11px; white-space: nowrap; }
-      .download:hover { border-color: #a5c4c1; background: var(--teal-soft); }
+      .log-actions { display: flex; align-items: center; gap: 6px; }
+      .download, .view-headers { min-height: 29px; padding: 0 8px; color: #315960; font-size: 11px; white-space: nowrap; }
+      .download:hover, .view-headers:hover { border-color: #a5c4c1; background: var(--teal-soft); }
       .download svg { width: 14px; height: 14px; }
+      .headers-dialog { width: min(880px, calc(100vw - 28px)); max-height: min(780px, calc(100vh - 28px)); padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); box-shadow: 0 18px 55px rgb(20 43 49 / 20%); }
+      .headers-dialog::backdrop { background: rgb(16 38 45 / 48%); }
+      .dialog-top { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
+      .dialog-top h2 { margin: 0; font-size: 16px; }
+      .dialog-content { padding: 20px; }
+      .description-block + .description-block { margin-top: 22px; }
+      .description-block h3 { margin: 0 0 9px; font-size: 13px; font-weight: 680; }
+      .description-table { overflow: hidden; border: 1px solid var(--line); border-radius: 5px; }
+      .description-row { display: grid; grid-template-columns: minmax(150px, 28%) minmax(0, 1fr); }
+      .description-row + .description-row { border-top: 1px solid var(--line); }
+      .description-label, .description-value { min-width: 0; padding: 9px 11px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+      .description-label { border-right: 1px solid var(--line); background: #f6f9f8; color: #53646c; font-weight: 650; }
+      .description-value { white-space: pre-wrap; }
+      .description-empty { padding: 14px; color: var(--muted); font-size: 12px; }
       .empty { display: none; padding: 42px 20px; color: var(--muted); text-align: center; font-size: 13px; }
       .empty.show { display: block; }
       .bottom { display: flex; justify-content: space-between; align-items: center; gap: 14px; min-height: 52px; color: var(--muted); font-size: 12px; }
@@ -107,6 +122,8 @@
         .filters input:last-of-type { grid-column: span 2; }
         .bottom { align-items: flex-start; flex-direction: column; padding: 10px 0; }
         .pager { align-self: flex-end; }
+        .dialog-top, .dialog-content { padding: 14px; }
+        .description-row { grid-template-columns: minmax(100px, 36%) minmax(0, 1fr); }
       }
       @media (prefers-reduced-motion: reduce) {
         *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
@@ -173,6 +190,10 @@
         </nav>
       </footer>
     </main>
+    <dialog class="headers-dialog" id="headers-dialog" aria-labelledby="headers-dialog-title">
+      <div class="dialog-top"><h2 id="headers-dialog-title">调用头信息</h2><button class="quiet" id="headers-close" type="button">关闭</button></div>
+      <div class="dialog-content" id="headers-content" aria-live="polite"></div>
+    </dialog>
     <script>
       (() => {
         const API_PREFIX = '/v0/management';
@@ -188,6 +209,8 @@
         const notice = document.getElementById('notice');
         const keyPanel = document.getElementById('key-panel');
         const keyInput = document.getElementById('management-key');
+        const headersDialog = document.getElementById('headers-dialog');
+        const headersContent = document.getElementById('headers-content');
         let page = 1;
         let total = 0;
         let pageSize = 25;
@@ -196,6 +219,7 @@
         let filterCatalog = { types: [], modelsByType: {}, detailsByType: {} };
         let filterOptionsReady = false;
         let filterOptionsPromise = null;
+        let activeLogController = null;
 
         const decodeStored = (raw) => {
           if (!raw) return null;
@@ -446,9 +470,175 @@
               <td class="reasoning">${effort}</td>
               <td class="latency">${escapeHTML(latency)}</td>
               <td><span class="result ${failed ? 'failed' : ''}">${failed ? `失败${item.status_code ? ` · ${escapeHTML(item.status_code)}` : ''}` : '成功'}</span></td>
-              <td><button class="download" type="button" data-trace="${escapeHTML(item.trace_id || '')}" ${canDownload ? '' : 'disabled'} title="${canDownload ? '下载与此调用关联的 CPA 请求日志' : 'CPA 未提供可用的 Trace ID'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 17v3h14v-3"/></svg>下载日志</button></td>
+              <td><div class="log-actions"><button class="view-headers" type="button" data-view-trace="${escapeHTML(item.trace_id || '')}" ${canDownload ? '' : 'disabled'} title="${canDownload ? '查看 CPA 日志中的头信息' : 'CPA 未提供可用的 Trace ID'}">查看头信息</button><button class="download" type="button" data-trace="${escapeHTML(item.trace_id || '')}" ${canDownload ? '' : 'disabled'} title="${canDownload ? '下载与此调用关联的 CPA 请求日志' : 'CPA 未提供可用的 Trace ID'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 17v3h14v-3"/></svg>下载日志</button></div></td>
             </tr>`;
           }).join('');
+        };
+
+        const parseLogHeaders = async (response) => {
+          const result = { request: [], apiRequests: [], apiResponses: [] };
+          const sectionPattern = /^=== (REQUEST INFO|HEADERS|REQUEST BODY|API REQUEST(?: (\d+))?|API RESPONSE(?: (\d+))?|RESPONSE|[A-Z0-9 ]+) ===$/;
+          const sensitiveName = /authorization|cookie|api[-_]?key|apikey|token|secret|credential|attestation|turn[-_]?state|password/i;
+          let section = '';
+          let currentHeaders = null;
+          let waitingForHeaders = false;
+          let collectingHeaders = false;
+          let blankLines = 0;
+          let seenLine = false;
+          let lineBuffer = '';
+          let done = false;
+
+          const consumeLine = (rawLine) => {
+            const line = rawLine.replace(/\r$/, '');
+            const trimmed = line.trim();
+            const heading = (!seenLine || blankLines > 0) ? sectionPattern.exec(trimmed) : null;
+            seenLine = true;
+            if (heading) {
+              section = heading[1];
+              collectingHeaders = section === 'HEADERS';
+              waitingForHeaders = section.startsWith('API REQUEST') || section.startsWith('API RESPONSE');
+              currentHeaders = null;
+              if (section === 'HEADERS') currentHeaders = result.request;
+              if (section.startsWith('API REQUEST')) {
+                const group = { number: heading[2] || '', headers: [] };
+                result.apiRequests.push(group);
+                currentHeaders = group.headers;
+              }
+              if (section.startsWith('API RESPONSE')) {
+                const group = { number: heading[3] || '', headers: [] };
+                result.apiResponses.push(group);
+                currentHeaders = group.headers;
+              }
+              blankLines = 0;
+              if (section === 'RESPONSE') done = true;
+              return;
+            }
+            if (!trimmed) {
+              blankLines += 1;
+              collectingHeaders = false;
+              return;
+            }
+            blankLines = 0;
+            if (waitingForHeaders && trimmed === 'Headers:') {
+              waitingForHeaders = false;
+              collectingHeaders = true;
+              return;
+            }
+            if (trimmed === 'Body:') {
+              collectingHeaders = false;
+              return;
+            }
+            if (!collectingHeaders || !currentHeaders) return;
+            const separator = line.indexOf(':');
+            if (separator < 1) return;
+            const name = line.slice(0, separator).trim();
+            if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) return;
+            currentHeaders.push({ name, value: sensitiveName.test(name) ? '已隐藏' : line.slice(separator + 1).trim() });
+          };
+
+          const feed = (text) => {
+            let start = 0;
+            while (!done && start < text.length) {
+              const end = text.indexOf('\n', start);
+              const fragment = end < 0 ? text.slice(start) : text.slice(start, end);
+              // 请求体和响应体可能非常大；非头字段行只保留判断分段所需的前缀。
+              const limit = collectingHeaders ? 131072 : 256;
+              if (lineBuffer.length < limit) lineBuffer += fragment.slice(0, limit - lineBuffer.length);
+              if (end < 0) break;
+              consumeLine(lineBuffer);
+              lineBuffer = '';
+              start = end + 1;
+            }
+          };
+
+          if (!response.body) {
+            feed(await response.text());
+          } else {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            try {
+              while (!done) {
+                const chunk = await reader.read();
+                if (chunk.done) break;
+                feed(decoder.decode(chunk.value, { stream: true }));
+              }
+              if (!done) feed(decoder.decode());
+            } finally {
+              if (done) await reader.cancel().catch(() => {});
+              reader.releaseLock();
+            }
+          }
+          if (!done && lineBuffer) consumeLine(lineBuffer);
+          return result;
+        };
+
+        const renderLogHeaders = (groups) => {
+          headersContent.replaceChildren();
+          const appendGroup = (title, headers) => {
+            const section = document.createElement('section');
+            section.className = 'description-block';
+            const heading = document.createElement('h3');
+            heading.textContent = title;
+            const table = document.createElement('div');
+            table.className = 'description-table';
+            if (headers.length === 0) {
+              const empty = document.createElement('div');
+              empty.className = 'description-empty';
+              empty.textContent = '日志中没有记录头信息。';
+              table.append(empty);
+            } else {
+              headers.forEach(({ name, value }) => {
+                const row = document.createElement('div');
+                row.className = 'description-row';
+                const label = document.createElement('div');
+                label.className = 'description-label';
+                label.textContent = name;
+                const content = document.createElement('div');
+                content.className = 'description-value';
+                content.textContent = value;
+                row.append(label, content);
+                table.append(row);
+              });
+            }
+            section.append(heading, table);
+            headersContent.append(section);
+          };
+          appendGroup('请求头', groups.request);
+          if (groups.apiRequests.length) {
+            groups.apiRequests.forEach((group) => appendGroup(`API 请求头${group.number ? ` #${group.number}` : ''}`, group.headers));
+          } else {
+            appendGroup('API 请求头', []);
+          }
+          if (groups.apiResponses.length) {
+            groups.apiResponses.forEach((group) => appendGroup(`API 响应头${group.number ? ` #${group.number}` : ''}`, group.headers));
+          } else {
+            appendGroup('API 响应头', []);
+          }
+        };
+
+        const showLogHeaders = async (traceID, button) => {
+          const controller = new AbortController();
+          activeLogController = controller;
+          button.disabled = true;
+          headersContent.textContent = '正在读取日志头信息…';
+          headersDialog.showModal();
+          try {
+            const response = await request(`${apiRoot}${API_PREFIX}/request-log-by-id/${encodeURIComponent(traceID)}`, { signal: controller.signal });
+            if (!response.ok) {
+              let reason = `CPA 返回 HTTP ${response.status}`;
+              try { const body = await response.json(); reason = body.error || body.message || reason; } catch {}
+              throw new Error(reason);
+            }
+            const groups = await parseLogHeaders(response);
+            if (headersDialog.open && activeLogController === controller) renderLogHeaders(groups);
+          } catch (error) {
+            if (error.name !== 'AbortError' && headersDialog.open && activeLogController === controller) {
+              headersContent.textContent = `头信息读取失败：${error instanceof Error ? error.message : '未知错误'}`;
+            }
+          } finally {
+            button.disabled = false;
+            if (activeLogController === controller) activeLogController = null;
+          }
         };
 
         const load = async () => {
@@ -518,6 +708,11 @@
         document.getElementById('previous').addEventListener('click', async () => { if (page > 1) { page -= 1; await load(); } });
         document.getElementById('next').addEventListener('click', async () => { if (page * pageSize < total) { page += 1; await load(); } });
         rows.addEventListener('click', async (event) => {
+          const viewButton = event.target.closest('button[data-view-trace]');
+          if (viewButton && !viewButton.disabled) {
+            await showLogHeaders(viewButton.dataset.viewTrace, viewButton);
+            return;
+          }
           const button = event.target.closest('button[data-trace]');
           if (!button || button.disabled) return;
           const traceID = button.dataset.trace;
@@ -549,6 +744,11 @@
             button.disabled = false;
             button.innerHTML = oldContent;
           }
+        });
+        document.getElementById('headers-close').addEventListener('click', () => headersDialog.close());
+        headersDialog.addEventListener('close', () => {
+          if (activeLogController) activeLogController.abort();
+          activeLogController = null;
         });
 
         try { managementKey = sessionStorage.getItem(KEY_SESSION) || discoverKey(); } catch { managementKey = discoverKey(); }
