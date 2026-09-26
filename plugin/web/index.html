@@ -478,7 +478,6 @@
         const parseLogHeaders = async (response) => {
           const result = { request: [], apiRequests: [], apiResponses: [] };
           const sectionPattern = /^=== (REQUEST INFO|HEADERS|REQUEST BODY|API REQUEST(?: (\d+))?|API RESPONSE(?: (\d+))?|RESPONSE|[A-Z0-9 ]+) ===$/;
-          const sensitiveName = /authorization|cookie|api[-_]?key|apikey|token|secret|credential|attestation|turn[-_]?state|password/i;
           let section = '';
           let currentHeaders = null;
           let waitingForHeaders = false;
@@ -533,7 +532,7 @@
             if (separator < 1) return;
             const name = line.slice(0, separator).trim();
             if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) return;
-            currentHeaders.push({ name, value: sensitiveName.test(name) ? '已隐藏' : line.slice(separator + 1).trim() });
+            currentHeaders.push({ name, value: line.slice(separator + 1).trim() });
           };
 
           const feed = (text) => {

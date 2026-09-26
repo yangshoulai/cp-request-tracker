@@ -9,7 +9,7 @@
 - 从 CPA Usage Plugin 接收已完成调用并写入 SQLite。
 - 在 CPA 插件菜单中提供带分页、筛选的调用表格。
 - 账号类型、账号邮箱、模型和思考程度筛选项从 CPA Management API 动态读取，并按账号类型和模型联动；账号类型按 `Provider`（如 `codex`、`xai`）记录。
-- 在每条记录中查看请求头、上游 API 请求头和上游 API 响应头；敏感头值在界面中遮盖。
+- 在每条记录中查看请求头、上游 API 请求头和上游 API 响应头，展示 CPA 日志实际返回的头值。
 - 从同一行直接下载 CPA 请求日志。
 - 尝试读取浏览器 `localStorage` 的 `cli-proxy-auth`，支持 `enc::v1::` 和 `enc::v2::` 格式；也可手动输入 Management key。
 - 默认保留 7 天请求元数据；CPA 插件配置可设为 1 到 3650 天。
@@ -62,7 +62,7 @@ GET /v0/management/request-log-by-id/:id
 
 日志下载需要 CPA 已开启 `request-log` 并且对应日志文件仍在 CPA 日志目录中。
 
-点击「查看头信息」会使用同一个 TraceID 读取 CPA 日志，只展示 `=== HEADERS ===`、`=== API REQUEST n ===` 和 `=== API RESPONSE n ===` 中的头信息，不展示请求体或响应体。CPA 记录重试时会按 `n` 分组显示多个上游请求或响应；Authorization、Cookie、API key、Token 等敏感值会遮盖。
+点击「查看头信息」会使用同一个 TraceID 读取 CPA 日志，只展示 `=== HEADERS ===`、`=== API REQUEST n ===` 和 `=== API RESPONSE n ===` 中的头信息，不展示请求体或响应体。CPA 记录重试时会按 `n` 分组显示多个上游请求或响应。插件不会额外修改头值；如果 CPA 写日志时已经将敏感值写成掩码，插件无法恢复原值。
 
 ## 数据与密钥
 
