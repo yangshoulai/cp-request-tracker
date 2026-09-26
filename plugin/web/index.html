@@ -26,7 +26,7 @@
       }
       * { box-sizing: border-box; }
       body { margin: 0; min-width: 320px; background: var(--canvas); }
-      button, input { font: inherit; }
+      button, input, select { font: inherit; }
       button { color: inherit; }
       .shell { max-width: 1540px; margin: 0 auto; padding: 24px clamp(16px, 3vw, 42px) 32px; }
       .topline { display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line); padding: 0 0 18px; }
@@ -46,7 +46,7 @@
       .key-panel { display: none; margin: 18px 0 0; padding: 16px; border: 1px solid #c9dedb; border-radius: 7px; background: #f8fcfb; box-shadow: var(--shadow); }
       .key-panel.open { display: block; }
       .key-row { display: flex; gap: 9px; max-width: 750px; }
-      .key-row input, .filters input { min-width: 0; width: 100%; height: 36px; padding: 0 10px; border: 1px solid #cdd8d8; border-radius: 5px; background: white; color: var(--ink); }
+      .key-row input, .filters input, .filters select { min-width: 0; width: 100%; height: 36px; padding: 0 10px; border: 1px solid #cdd8d8; border-radius: 5px; background: white; color: var(--ink); }
       .key-row input { flex: 1; }
       .primary { min-height: 36px; padding: 0 13px; border-color: var(--teal); background: var(--teal); color: white; font-size: 12px; font-weight: 650; }
       .primary:hover { background: #0d5d5b; }
@@ -57,8 +57,9 @@
       .section-title { margin: 0; font-size: 16px; letter-spacing: -.01em; font-weight: 680; }
       .section-subtitle { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
       .filters { display: grid; grid-template-columns: repeat(5, minmax(115px, 1fr)) auto; gap: 8px; width: min(980px, 100%); }
-      .filters input { height: 34px; font-size: 12px; }
+      .filters input, .filters select { height: 34px; font-size: 12px; }
       .filters input::placeholder { color: #849197; }
+      .filters select { color: #53646c; }
       .quiet { min-height: 34px; padding: 0 11px; color: #44555d; font-size: 12px; white-space: nowrap; }
       .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); box-shadow: var(--shadow); }
       table { width: 100%; min-width: 1050px; border-collapse: separate; border-spacing: 0; text-align: left; }
@@ -147,10 +148,10 @@
       <section class="toolbar" aria-label="调用记录和筛选">
         <div><h2 class="section-title">最近调用</h2><p class="section-subtitle" id="record-total">正在连接 CPA…</p></div>
         <form class="filters" id="filter-form">
-          <input name="account_type" placeholder="账号类型" aria-label="按账号类型筛选" />
+          <select name="account_type" aria-label="按账号类型筛选" disabled><option value="">全部账号类型</option></select>
           <input name="email" placeholder="账号邮箱" aria-label="按邮箱筛选" />
-          <input name="model" placeholder="模型" aria-label="按模型筛选" />
-          <input name="reasoning_effort" placeholder="思考程度" aria-label="按思考程度筛选" />
+          <select name="model" aria-label="按模型筛选" disabled><option value="">全部模型</option></select>
+          <select name="reasoning_effort" aria-label="按思考程度筛选" disabled><option value="">全部思考程度</option></select>
           <input name="q" placeholder="请求 ID / Trace ID" aria-label="搜索请求 ID 或 Trace ID" />
           <button class="quiet" type="submit">筛选</button>
         </form>
@@ -192,6 +193,9 @@
         let pageSize = 25;
         let filters = {};
         let managementKey = '';
+        let filterCatalog = { types: [], modelsByType: {}, detailsByType: {} };
+        let filterOptionsReady = false;
+        let filterOptionsPromise = null;
 
         const decodeStored = (raw) => {
           if (!raw) return null;
@@ -240,6 +244,162 @@
           const body = await response.text();
           if (!body.trim()) throw new Error(`CPA 返回 HTTP ${response.status}，响应为空。`);
           try { return JSON.parse(body); } catch { throw new Error(`CPA 返回了无法解析的 JSON（HTTP ${response.status}）。`); }
+        };
+
+        const normalizeProvider = (value) => {
+          const key = String(value ?? '').trim().toLowerCase().replace(/_/g, '-');
+          if (key === 'x-ai' || key === 'grok') return 'xai';
+          if (key === 'muse') return 'meta';
+          return key;
+        };
+
+        const managementJSON = async (path) => {
+          const response = await request(`${apiRoot}${API_PREFIX}${path}`);
+          if (response.status === 401 || response.status === 403) {
+            throw new Error('Management key 无效或当前账号没有管理权限，请检查密钥。');
+          }
+          const data = await readJSON(response);
+          if (!response.ok) throw new Error(data.error || data.message || `CPA 返回 HTTP ${response.status}`);
+          return data;
+        };
+
+        const normalizeModel = (raw) => {
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+          const id = String(raw.id ?? raw.slug ?? raw.name ?? '').trim();
+          if (!id) return null;
+          const thinking = raw.thinking && typeof raw.thinking === 'object' ? raw.thinking : {};
+          const levels = Array.isArray(thinking.levels)
+            ? thinking.levels.map((level) => String(level ?? '').trim()).filter(Boolean)
+            : [];
+          return {
+            id,
+            displayName: String(raw.display_name ?? raw.displayName ?? '').trim(),
+            levels,
+          };
+        };
+
+        const addCatalogModel = (models, model) => {
+          if (!model) return;
+          const existingKey = model.id.toLowerCase();
+          const existing = models.find((item) => item.id.toLowerCase() === existingKey);
+          if (!existing) {
+            models.push({ id: model.id, displayName: model.displayName });
+          } else if (!existing.displayName && model.displayName) {
+            existing.displayName = model.displayName;
+          }
+        };
+
+        const setSelectOptions = (select, placeholder, options, selected = '') => {
+          select.replaceChildren();
+          const empty = document.createElement('option');
+          empty.value = '';
+          empty.textContent = placeholder;
+          select.append(empty);
+          options.forEach((option) => {
+            const item = document.createElement('option');
+            item.value = typeof option === 'string' ? option : option.value;
+            item.textContent = typeof option === 'string' ? option : option.label;
+            select.append(item);
+          });
+          const values = new Set(options.map((option) => typeof option === 'string' ? option : option.value));
+          select.value = values.has(selected) ? selected : '';
+          select.disabled = options.length === 0;
+        };
+
+        const selectedFilterValue = (name) => String(form.elements[name]?.value || '');
+
+        const updateReasoningOptions = () => {
+          const type = selectedFilterValue('account_type');
+          const model = selectedFilterValue('model').toLowerCase();
+          const levels = [];
+          const detailGroups = type ? [filterCatalog.detailsByType[type] || {}] : Object.values(filterCatalog.detailsByType);
+          detailGroups.forEach((details) => Object.entries(details).forEach(([modelID, entry]) => {
+            if (model && modelID.toLowerCase() !== model) return;
+            (entry.levels || []).forEach((level) => { if (!levels.includes(level)) levels.push(level); });
+          }));
+          setSelectOptions(
+            form.elements.reasoning_effort,
+            levels.length ? '全部思考程度' : 'CPA 未提供思考程度',
+            levels,
+            selectedFilterValue('reasoning_effort'),
+          );
+        };
+
+        const updateModelOptions = () => {
+          const type = selectedFilterValue('account_type');
+          const groups = type ? [filterCatalog.modelsByType[type] || []] : Object.values(filterCatalog.modelsByType);
+          const models = [];
+          groups.flat().forEach((model) => addCatalogModel(models, model));
+          models.sort((left, right) => left.id.localeCompare(right.id));
+          setSelectOptions(
+            form.elements.model,
+            models.length ? '全部模型' : 'CPA 未提供模型',
+            models.map((model) => ({ value: model.id, label: model.displayName ? `${model.id} · ${model.displayName}` : model.id })),
+            selectedFilterValue('model'),
+          );
+          updateReasoningOptions();
+        };
+
+        const loadFilterOptions = async () => {
+          const data = await managementJSON('/auth-files');
+          const files = Array.isArray(data.files) ? data.files : [];
+          const filesByType = new Map();
+          files.forEach((file) => {
+            const type = normalizeProvider(file?.type || file?.provider);
+            const selector = String(file?.id || file?.name || '').trim();
+            if (!type || !selector) return;
+            if (!filesByType.has(type)) filesByType.set(type, []);
+            filesByType.get(type).push(selector);
+          });
+
+          const nextCatalog = { types: [], modelsByType: {}, detailsByType: {} };
+          const typeResults = await Promise.all([...filesByType.entries()].map(async ([type, selectors]) => {
+            const channel = type === 'gemini-cli' ? 'gemini' : type;
+            const definitionPromise = managementJSON(`/model-definitions/${encodeURIComponent(channel)}`)
+              .catch(() => ({ models: [] }));
+            const modelPromises = selectors.map((selector) =>
+              managementJSON(`/auth-files/models?name=${encodeURIComponent(selector)}`).catch(() => ({ models: [] })),
+            );
+            const [definitionData, ...modelData] = await Promise.all([definitionPromise, ...modelPromises]);
+            const definitions = Array.isArray(definitionData.models) ? definitionData.models : [];
+            const details = {};
+            const definitionModels = [];
+            definitions.map(normalizeModel).filter(Boolean).forEach((model) => {
+              definitionModels.push(model);
+              details[model.id] = { levels: model.levels };
+            });
+            const actualModels = [];
+            modelData.forEach((payload) => {
+              const models = Array.isArray(payload.models) ? payload.models : [];
+              models.map(normalizeModel).filter(Boolean).forEach((model) => addCatalogModel(actualModels, model));
+            });
+            const models = actualModels.length ? actualModels : definitionModels;
+            return { type, models, details };
+          }));
+
+          typeResults.forEach(({ type, models, details }) => {
+            nextCatalog.types.push(type);
+            nextCatalog.modelsByType[type] = models;
+            nextCatalog.detailsByType[type] = details;
+          });
+          nextCatalog.types.sort((left, right) => left.localeCompare(right));
+          filterCatalog = nextCatalog;
+          setSelectOptions(
+            form.elements.account_type,
+            nextCatalog.types.length ? '全部账号类型' : 'CPA 未提供账号类型',
+            nextCatalog.types,
+            selectedFilterValue('account_type'),
+          );
+          updateModelOptions();
+          filterOptionsReady = true;
+        };
+
+        const ensureFilterOptions = async () => {
+          if (filterOptionsReady) return;
+          if (!filterOptionsPromise) {
+            filterOptionsPromise = loadFilterOptions().finally(() => { filterOptionsPromise = null; });
+          }
+          await filterOptionsPromise;
         };
 
         const makeQuery = () => {
@@ -295,6 +455,7 @@
           rows.innerHTML = '<tr><td class="loading" colspan="7">正在读取调用记录…</td></tr>';
           document.getElementById('empty').classList.remove('show');
           try {
+            await ensureFilterOptions();
             const response = await request(`${apiRoot}${PLUGIN_API_PREFIX}/records?${makeQuery()}`);
             if (response.status === 401 || response.status === 403) {
               managementKey = '';
@@ -337,6 +498,15 @@
           filters = Object.fromEntries(Array.from(new FormData(form).entries(), ([key, value]) => [key, String(value).trim()]));
           page = 1;
           await load();
+        });
+        form.elements.account_type.addEventListener('change', () => {
+          form.elements.model.value = '';
+          form.elements.reasoning_effort.value = '';
+          updateModelOptions();
+        });
+        form.elements.model.addEventListener('change', () => {
+          form.elements.reasoning_effort.value = '';
+          updateReasoningOptions();
         });
         document.getElementById('previous').addEventListener('click', async () => { if (page > 1) { page -= 1; await load(); } });
         document.getElementById('next').addEventListener('click', async () => { if (page * pageSize < total) { page += 1; await load(); } });

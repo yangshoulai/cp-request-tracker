@@ -12,7 +12,10 @@ CPA 插件菜单
     └─ /v0/resource/plugins/cpa-request-tracker/page
          └─ 浏览器呈现单页
               └─ /v0/management/plugins/cpa-request-tracker/records：分页记录和账号信息
-                   └─ 按 TraceID 调用 CPA 请求日志下载接口
+                   ├─ /v0/management/auth-files：读取账号类型
+                   ├─ /v0/management/auth-files/models?name=...：读取账号实际可用模型
+                   └─ /v0/management/model-definitions/{channel}：读取模型思考级别
+              └─ 按 TraceID 调用 CPA 请求日志下载接口
 ```
 
 ## 持久化字段
