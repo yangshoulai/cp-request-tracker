@@ -149,7 +149,7 @@
         <div><h2 class="section-title">最近调用</h2><p class="section-subtitle" id="record-total">正在连接 CPA…</p></div>
         <form class="filters" id="filter-form">
           <select name="account_type" aria-label="按账号类型筛选" disabled><option value="">全部账号类型</option></select>
-          <input name="email" placeholder="账号邮箱" aria-label="按邮箱筛选" />
+          <select name="email" aria-label="按邮箱筛选" disabled><option value="">全部账号邮箱</option></select>
           <select name="model" aria-label="按模型筛选" disabled><option value="">全部模型</option></select>
           <select name="reasoning_effort" aria-label="按思考程度筛选" disabled><option value="">全部思考程度</option></select>
           <input name="q" placeholder="请求 ID / Trace ID" aria-label="搜索请求 ID 或 Trace ID" />
@@ -412,6 +412,13 @@
           const items = Array.isArray(data.items) ? data.items : [];
           total = Number(data.total) || 0;
           pageSize = Number(data.page_size) || pageSize;
+          const emails = Array.isArray(data.emails) ? data.emails.map((email) => String(email ?? '').trim()).filter(Boolean) : [];
+          setSelectOptions(
+            form.elements.email,
+            emails.length ? '全部账号邮箱' : 'CPA 未提供邮箱',
+            emails,
+            selectedFilterValue('email'),
+          );
           const pages = Math.max(1, Math.ceil(total / pageSize));
           document.getElementById('record-total').textContent = `${total.toLocaleString()} 条调用记录`;
           document.getElementById('retention').lastChild.textContent = `保留 ${Number(data.retention_days) || 7} 天`;

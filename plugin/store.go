@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -46,6 +47,7 @@ type callPage struct {
 	Page          int          `json:"page"`
 	PageSize      int          `json:"page_size"`
 	RetentionDays int          `json:"retention_days"`
+	Emails        []string     `json:"emails"`
 }
 
 type authProviderMaps struct {
@@ -258,6 +260,10 @@ func listCalls(ctx context.Context, filter callFilter, authFiles []pluginapi.Hos
 	if errSync := syncAccountEmails(ctx, db, authFiles); errSync != nil {
 		return callPage{}, errSync
 	}
+	emails, errEmails := listEmailOptions(ctx, db, authFiles)
+	if errEmails != nil {
+		return callPage{}, errEmails
+	}
 	providers := buildAuthProviderMaps(authFiles)
 	if filter.Page < 1 {
 		filter.Page = 1
@@ -349,7 +355,43 @@ func listCalls(ctx context.Context, filter callFilter, authFiles []pluginapi.Hos
 	if errRows := rows.Err(); errRows != nil {
 		return callPage{}, fmt.Errorf("iterate request metadata: %w", errRows)
 	}
-	return callPage{Items: items, Total: total, Page: filter.Page, PageSize: filter.PageSize, RetentionDays: currentRetentionDays()}, nil
+	return callPage{Items: items, Total: total, Page: filter.Page, PageSize: filter.PageSize, RetentionDays: currentRetentionDays(), Emails: emails}, nil
+}
+
+func listEmailOptions(ctx context.Context, db *sql.DB, entries []pluginapi.HostAuthFileEntry) ([]string, error) {
+	emails := make(map[string]string)
+	for _, entry := range entries {
+		email := strings.TrimSpace(entry.Email)
+		if email != "" {
+			emails[strings.ToLower(email)] = email
+		}
+	}
+	rows, errQuery := db.QueryContext(ctx, `SELECT DISTINCT trim(email) FROM accounts WHERE trim(email) <> ''`)
+	if errQuery != nil {
+		return nil, fmt.Errorf("list account email options: %w", errQuery)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var email string
+		if errScan := rows.Scan(&email); errScan != nil {
+			return nil, fmt.Errorf("read account email option: %w", errScan)
+		}
+		email = strings.TrimSpace(email)
+		if email != "" {
+			emails[strings.ToLower(email)] = email
+		}
+	}
+	if errRows := rows.Err(); errRows != nil {
+		return nil, fmt.Errorf("iterate account email options: %w", errRows)
+	}
+	options := make([]string, 0, len(emails))
+	for _, email := range emails {
+		options = append(options, email)
+	}
+	sort.Slice(options, func(i, j int) bool {
+		return strings.ToLower(options[i]) < strings.ToLower(options[j])
+	})
+	return options, nil
 }
 
 func syncAccountEmails(ctx context.Context, db *sql.DB, entries []pluginapi.HostAuthFileEntry) error {

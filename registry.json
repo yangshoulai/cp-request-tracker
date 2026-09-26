@@ -6,7 +6,7 @@
       "name": "CPA Request Tracker",
       "description": "记录 CPA API 调用元数据，在分页表格中筛选并下载对应请求日志。",
       "author": "yangshoulai",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "repository": "https://github.com/yangshoulai/cp-request-tracker",
       "homepage": "https://github.com/yangshoulai/cp-request-tracker",
       "license": "MIT",
