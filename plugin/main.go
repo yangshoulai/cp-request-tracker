@@ -74,7 +74,7 @@ const (
 	resourcePath = "/page"
 )
 
-var pluginVersion = "0.1.2"
+var pluginVersion = "0.1.3"
 
 //go:embed web/index.html
 var indexHTML string

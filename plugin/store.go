@@ -48,6 +48,63 @@ type callPage struct {
 	RetentionDays int          `json:"retention_days"`
 }
 
+type authProviderMaps struct {
+	byKey          map[string]string
+	byID           map[string]string
+	keysByProvider map[string]map[string]struct{}
+	idsByProvider  map[string]map[string]struct{}
+}
+
+func normalizeProviderName(value string) string {
+	value = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(value, "_", "-")))
+	switch value {
+	case "x-ai", "grok":
+		return "xai"
+	case "muse":
+		return "meta"
+	default:
+		return value
+	}
+}
+
+func authProviderKey(authID, authIndex string) string {
+	return strings.TrimSpace(authID) + "\x00" + strings.TrimSpace(authIndex)
+}
+
+func buildAuthProviderMaps(entries []pluginapi.HostAuthFileEntry) authProviderMaps {
+	result := authProviderMaps{
+		byKey:          make(map[string]string),
+		byID:           make(map[string]string),
+		keysByProvider: make(map[string]map[string]struct{}),
+		idsByProvider:  make(map[string]map[string]struct{}),
+	}
+	for _, entry := range entries {
+		authID := strings.TrimSpace(entry.ID)
+		if authID == "" {
+			continue
+		}
+		provider := normalizeProviderName(entry.Provider)
+		if provider == "" {
+			provider = normalizeProviderName(entry.Type)
+		}
+		if provider == "" {
+			continue
+		}
+		result.byID[authID] = provider
+		key := authProviderKey(authID, entry.AuthIndex)
+		result.byKey[key] = provider
+		if result.keysByProvider[provider] == nil {
+			result.keysByProvider[provider] = make(map[string]struct{})
+		}
+		result.keysByProvider[provider][key] = struct{}{}
+		if result.idsByProvider[provider] == nil {
+			result.idsByProvider[provider] = make(map[string]struct{})
+		}
+		result.idsByProvider[provider][authID] = struct{}{}
+	}
+	return result
+}
+
 var (
 	storeMu       sync.Mutex
 	storeDB       *sql.DB
@@ -155,9 +212,11 @@ func saveCall(record pluginapi.UsageRecord) error {
 	if requestedAt.IsZero() {
 		requestedAt = time.Now()
 	}
-	accountType := strings.TrimSpace(record.AuthType)
+	// 页面中的“账号类型”对应 CPA 的提供方（codex、xai 等），而不是
+	// AuthType 的认证方式（oauth、apikey 等）。
+	accountType := normalizeProviderName(record.Provider)
 	if accountType == "" {
-		accountType = strings.TrimSpace(record.Provider)
+		accountType = normalizeProviderName(record.AuthType)
 	}
 	_, errInsert := db.Exec(`INSERT INTO calls (
 		request_id, trace_id, auth_id, auth_index, account_type, requested_at_ms,
@@ -199,6 +258,7 @@ func listCalls(ctx context.Context, filter callFilter, authFiles []pluginapi.Hos
 	if errSync := syncAccountEmails(ctx, db, authFiles); errSync != nil {
 		return callPage{}, errSync
 	}
+	providers := buildAuthProviderMaps(authFiles)
 	if filter.Page < 1 {
 		filter.Page = 1
 	}
@@ -218,7 +278,29 @@ func listCalls(ctx context.Context, filter callFilter, authFiles []pluginapi.Hos
 		where = append(where, expression+" LIKE ?")
 		args = append(args, "%"+value+"%")
 	}
-	addLike("c.account_type", filter.AccountType)
+	if accountType := strings.TrimSpace(filter.AccountType); accountType != "" {
+		provider := normalizeProviderName(accountType)
+		clauses := []string{"LOWER(c.account_type) LIKE LOWER(?)"}
+		args = append(args, "%"+accountType+"%")
+		for key := range providers.keysByProvider[provider] {
+			parts := strings.SplitN(key, "\x00", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			if parts[1] == "" {
+				clauses = append(clauses, "c.auth_id = ?")
+				args = append(args, parts[0])
+			} else {
+				clauses = append(clauses, "(c.auth_id = ? AND c.auth_index = ?)")
+				args = append(args, parts[0], parts[1])
+			}
+		}
+		for authID := range providers.idsByProvider[provider] {
+			clauses = append(clauses, "c.auth_id = ?")
+			args = append(args, authID)
+		}
+		where = append(where, "("+strings.Join(clauses, " OR ")+")")
+	}
 	addLike("coalesce(a.email, '')", filter.Email)
 	addLike("c.model", filter.Model)
 	addLike("c.reasoning_effort", filter.ReasoningEffort)
@@ -237,7 +319,7 @@ func listCalls(ctx context.Context, filter callFilter, authFiles []pluginapi.Hos
 	}
 	queryArgs := append([]any(nil), args...)
 	queryArgs = append(queryArgs, filter.PageSize, (filter.Page-1)*filter.PageSize)
-	query := `SELECT c.id, c.request_id, c.trace_id, c.account_type, coalesce(a.email, ''),
+	query := `SELECT c.id, c.request_id, c.trace_id, c.auth_id, c.auth_index, c.account_type, coalesce(a.email, ''),
 		c.requested_at_ms, c.latency_ms, c.model, c.reasoning_effort, c.failed, c.status_code
 		FROM calls c LEFT JOIN accounts a ON a.auth_id = c.auth_id AND a.auth_index = c.auth_index
 		WHERE ` + clause + " ORDER BY c.requested_at_ms DESC, c.id DESC LIMIT ? OFFSET ?"
@@ -249,9 +331,17 @@ func listCalls(ctx context.Context, filter callFilter, authFiles []pluginapi.Hos
 	items := make([]callRecord, 0, filter.PageSize)
 	for rows.Next() {
 		var item callRecord
+		var authID, authIndex string
 		var requestedAtMS int64
-		if errScan := rows.Scan(&item.ID, &item.RequestID, &item.TraceID, &item.AccountType, &item.AccountEmail, &requestedAtMS, &item.LatencyMS, &item.Model, &item.ReasoningEffort, &item.Failed, &item.StatusCode); errScan != nil {
+		if errScan := rows.Scan(&item.ID, &item.RequestID, &item.TraceID, &authID, &authIndex, &item.AccountType, &item.AccountEmail, &requestedAtMS, &item.LatencyMS, &item.Model, &item.ReasoningEffort, &item.Failed, &item.StatusCode); errScan != nil {
 			return callPage{}, fmt.Errorf("read request metadata: %w", errScan)
+		}
+		if provider := providers.byKey[authProviderKey(authID, authIndex)]; provider != "" {
+			item.AccountType = provider
+		} else if provider := providers.byKey[authProviderKey(authID, "")]; provider != "" {
+			item.AccountType = provider
+		} else if provider := providers.byID[authID]; provider != "" {
+			item.AccountType = provider
 		}
 		item.RequestedAt = time.UnixMilli(requestedAtMS).UTC()
 		items = append(items, item)

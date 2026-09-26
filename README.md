@@ -8,7 +8,7 @@
 
 - 从 CPA Usage Plugin 接收已完成调用并写入 SQLite。
 - 在 CPA 插件菜单中提供带分页、筛选的调用表格。
-- 账号类型、模型和思考程度筛选项从 CPA Management API 动态读取，并按账号类型和模型联动。
+- 账号类型、模型和思考程度筛选项从 CPA Management API 动态读取，并按账号类型和模型联动；账号类型按 `Provider`（如 `codex`、`xai`）记录。
 - 从同一行直接下载 CPA 请求日志。
 - 尝试读取浏览器 `localStorage` 的 `cli-proxy-auth`，支持 `enc::v1::` 和 `enc::v2::` 格式；也可手动输入 Management key。
 - 默认保留 7 天请求元数据；CPA 插件配置可设为 1 到 3650 天。
