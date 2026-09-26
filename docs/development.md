@@ -31,8 +31,8 @@ CPA 插件管理器通过自定义插件商店索引读取本项目 registry；�
 ## 版本发布
 
 1. 更新 `pluginVersion` 默认版本，并提交变更。
-2. 推送与版本对应的 `vX.Y.Z` 标签。
-3. GitHub Actions 在对应平台构建动态库、按 CPA 规定的 `<plugin-id>_<version>_<goos>_<goarch>.zip` 命名，并为所有 ZIP 生成 `checksums.txt`。当前目标为 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64。
-4. 发布的 tag 版本会覆盖二进制中的插件 metadata 版本。
+2. 推送到 `main` 会自动构建多平台 Actions 产物；也可以在 GitHub Actions 页面手动运行工作流。
+3. 推送与版本对应的 `vX.Y.Z` 标签会构建并发布 GitHub Release。产物按 CPA 规定的 `<plugin-id>_<version>_<goos>_<goarch>.zip` 命名，并包含 `checksums.txt`。当前目标为 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64。
+4. 发布 tag 会覆盖二进制中的插件 metadata 版本。只有 tag 发布会生成插件商店可安装的正式 Release。
 
 工作流需要仓库的 `GITHUB_TOKEN` 默认 contents 写权限，不需要配置额外凭据。
